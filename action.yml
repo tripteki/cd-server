@@ -1,0 +1,61 @@
+name: "Continuous Delivery and Continuous Deployment Server Convention"
+description: "Trip Teknologi's Continuous Delivery and Continuous Deployment Server Convention"
+author: "Trip Teknologi"
+inputs:
+  credential:
+    required: true
+    description: "Deliver/Deploy Credential"
+  type:
+    required: true
+    description: "Type of Deliver/Deploy"
+  artifact:
+    required: true
+    description: "Target of Version Artifact"
+outputs:
+  version:
+    value: ${{ steps.version.outputs.version }}
+    description: "Version of Artifact"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - id: version
+      uses: tripteki/version@1.0.0
+      with:
+        token: ${{ inputs.token }}
+        artifact: ${{ inputs.artifact }}
+    - id: credential
+      if: ${{ steps.version.outputs.passes == 'true' }}
+      shell: sh
+      run: |
+        credentials=$(echo ${{ format('{{{0}}}', toJson(inputs.credential)) }})
+        echo SSH_HOST=$(echo $credentials | jq .host | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_PORT=$(echo $credentials | jq .port | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_USER=$(echo $credentials | jq .user | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_PRIVATE_KEY=$(echo $credentials | jq .privatekey | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_PRIVATE_KEY_PASSPHRASE=$(echo $credentials | jq .privatekey_passphrase | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_PATH=$(echo $credentials | jq .path | sed s/^null$//) 1>> $GITHUB_OUTPUT
+        echo SSH_SCRIPT=$(echo $credentials | jq .script | sed s/^null$//) 1>> $GITHUB_OUTPUT
+    - id: ssh
+      if: ${{ steps.version.outputs.passes == 'true' && inputs.type == 'ssh' }}
+      uses: burnett01/rsync-deployments@5.2.1
+      with:
+        switches: -r --delete -a -z -Pv
+        remote_host: ${{ steps.credential.outputs.SSH_HOST }}
+        remote_port: ${{ steps.credential.outputs.SSH_PORT }}
+        remote_user: ${{ steps.credential.outputs.SSH_USER }}
+        remote_key: ${{ steps.credential.outputs.SSH_PRIVATE_KEY }}
+        remote_key_pass: ${{ steps.credential.outputs.SSH_PRIVATE_KEY_PASSPHRASE }}
+        remote_path: ${{ steps.credential.outputs.SSH_PATH }}
+    - id: command
+      if: ${{ steps.version.outputs.passes == 'true' && inputs.type == 'command' }}
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ steps.credential.outputs.SSH_HOST }}
+        port: ${{ steps.credential.outputs.SSH_PORT }}
+        user: ${{ steps.credential.outputs.SSH_USER }}
+        key: ${{ steps.credential.outputs.SSH_PRIVATE_KEY }}
+        passphrase: ${{ steps.credential.outputs.SSH_PRIVATE_KEY_PASSPHRASE }}
+        script: ${{ steps.credential.outputs.SSH_SCRIPT }}
